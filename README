@@ -1,0 +1,9 @@
+p5-Module-Setup-MyFlavor
+
+INSTALLATION
+
+To install this module, run the following commands:
+
+    git clone git://github.com/shiba-yu36/p5-Module-Setup-MyFlavor.git
+    cd p5-Module-Setup-MyFlavor/lib
+    module-setup --init --flavor-class=+WebAppMojoSkinnyXslate webapp-msx
