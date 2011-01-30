@@ -7,7 +7,7 @@ use base 'Module::Setup::Flavor';
 
 =head1
 
-WebAppMojoSkinnyXslate - pack from mojo-skinny-xslate
+WebAppMojoSkinnyXslate - pack from webapp-msx
 
 =head1 SYNOPSIS
 
@@ -107,6 +107,8 @@ template: |
   to read the documentation online with your favorite pager.
 
   [% config.author %]
+---
+dir: config
 ---
 dir: inc/.author
 ---
@@ -811,7 +813,7 @@ template: |
 ---
 config:
   author: shiba_yu36
-  class: Module::Setup::Flavor::Default
+  class: WebAppMojoSkinnyXslate
   email: shibayu36@gmail.com
   plugins:
     - Config::Basic
