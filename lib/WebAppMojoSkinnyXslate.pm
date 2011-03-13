@@ -35,9 +35,12 @@ template: |
   
   # requires '';
   requires 'Mojolicious';
-  requires 'MojoX::Renderer::Xslate';
-  requires 'Text::Xslate';
   requires 'Mojolicious::Controller';
+  requires 'Mojolicious::Static';
+  requires 'MojoX::Renderer::Xslate';
+  requires 'Mojolicious::Plugin::CSRFDefender';
+  
+  requires 'Text::Xslate';
   requires 'DBIx::Skinny';
   requires 'DBIx::Skinny::Schema';
   requires 'DateTime';
@@ -142,7 +145,6 @@ template: |
   use Cwd        ();
   use File::Find ();
   use File::Path ();
-  use FindBin;
   
   use vars qw{$VERSION $MAIN};
   BEGIN {
@@ -152,7 +154,7 @@ template: |
   	# This is not enforced yet, but will be some time in the next few
   	# releases once we can make sure it won't clash with custom
   	# Module::Install extensions.
-  	$VERSION = '0.95';
+  	$VERSION = '1.00';
   
   	# Storage for the pseudo-singleton
   	$MAIN    = undef;
@@ -247,6 +249,11 @@ template: |
   	#-------------------------------------------------------------
   
   	unless ( -f $self->{file} ) {
+  		foreach my $key (keys %INC) {
+  			delete $INC{$key} if $key =~ /Module\/Install/;
+  		}
+  
+  		local $^W;
   		require "$self->{path}/$self->{dispatch}.pm";
   		File::Path::mkpath("$self->{prefix}/$self->{author}");
   		$self->{admin} = "$self->{name}::$self->{dispatch}"->new( _top => $self );
@@ -255,12 +262,13 @@ template: |
   		goto &{"$self->{name}::import"};
   	}
   
+  	local $^W;
   	*{"${who}::AUTOLOAD"} = $self->autoload;
   	$self->preload;
   
   	# Unregister loader and worker packages so subdirs can use them again
-  	delete $INC{"$self->{file}"};
-  	delete $INC{"$self->{path}.pm"};
+  	delete $INC{'inc/Module/Install.pm'};
+  	delete $INC{'Module/Install.pm'};
   
   	# Save to the singleton
   	$MAIN = $self;
@@ -279,7 +287,21 @@ template: |
   			# Delegate back to parent dirs
   			goto &$code unless $cwd eq $pwd;
   		}
-  		$$sym =~ /([^:]+)$/ or die "Cannot autoload $who - $sym";
+  		unless ($$sym =~ s/([^:]+)$//) {
+  			# XXX: it looks like we can't retrieve the missing function
+  			# via $$sym (usually $main::AUTOLOAD) in this case.
+  			# I'm still wondering if we should slurp Makefile.PL to
+  			# get some context or not ...
+  			my ($package, $file, $line) = caller;
+  			die <<"EOT";
+  Unknown function is found at $file line $line.
+  Execution of $file aborted due to runtime errors.
+  
+  If you're a contributor to a project, you may need to install
+  some Module::Install extensions from CPAN (or other repository).
+  If you're a user of a module, please contact the author.
+  EOT
+  		}
   		my $method = $1;
   		if ( uc($method) eq $method ) {
   			# Do nothing
@@ -320,6 +342,7 @@ template: |
   
   	my $who = $self->_caller;
   	foreach my $name ( sort keys %seen ) {
+  		local $^W;
   		*{"${who}::$name"} = sub {
   			${"${who}::AUTOLOAD"} = "${who}::$name";
   			goto &{"${who}::AUTOLOAD"};
@@ -330,12 +353,18 @@ template: |
   sub new {
   	my ($class, %args) = @_;
   
+  	delete $INC{'FindBin.pm'};
+  	{
+  		# to suppress the redefine warning
+  		local $SIG{__WARN__} = sub {};
+  		require FindBin;
+  	}
+  
   	# ignore the prefix on extension modules built from top level.
   	my $base_path = Cwd::abs_path($FindBin::Bin);
   	unless ( Cwd::abs_path(Cwd::cwd()) eq $base_path ) {
   		delete $args{prefix};
   	}
-  
   	return $args{_self} if $args{_self};
   
   	$args{dispatch} ||= 'Admin';
@@ -388,8 +417,10 @@ template: |
   sub load_extensions {
   	my ($self, $path, $top) = @_;
   
+  	my $should_reload = 0;
   	unless ( grep { ! ref $_ and lc $_ eq lc $self->{prefix} } @INC ) {
   		unshift @INC, $self->{prefix};
+  		$should_reload = 1;
   	}
   
   	foreach my $rv ( $self->find_extensions($path) ) {
@@ -397,12 +428,13 @@ template: |
   		next if $self->{pathnames}{$pkg};
   
   		local $@;
-  		my $new = eval { require $file; $pkg->can('new') };
+  		my $new = eval { local $^W; require $file; $pkg->can('new') };
   		unless ( $new ) {
   			warn $@ if $@;
   			next;
   		}
-  		$self->{pathnames}{$pkg} = delete $INC{$file};
+  		$self->{pathnames}{$pkg} =
+  			$should_reload ? delete $INC{$file} : $INC{$file};
   		push @{$self->{extensions}}, &{$new}($pkg, _top => $top );
   	}
   
@@ -572,10 +604,7 @@ template: |
   use HTML::FillInForm::Lite qw(fillinform);
   use MojoX::Renderer::Xslate;
   use Text::Xslate qw(html_builder);
-  use [% module %]::Model;
   use Mojolicious::Static;
-  
-  __PACKAGE__->attr(model => sub { [% module %]::Model->new });
   
   # This method will run once at server start
   sub startup {
@@ -608,13 +637,16 @@ template: |
       $self->plugin('json_config', {
           file => 'config/config.json',
       });
+  
+      # Defend CSRF
+      $self->plugin('Mojolicious::Plugin::CSRFDefender');
   }
   
   1;
 ---
-file: lib/____var-module_path-var____/Model.pm
+file: lib/____var-module_path-var____/Skinny.pm
 template: |
-  package [% module %]::Model;
+  package [% module %]::Skinny;
   use strict;
   use warnings;
   
@@ -645,9 +677,9 @@ template: |
   
   1;
 ---
-file: lib/____var-module_path-var____/Model/Schema.pm
+file: lib/____var-module_path-var____/Skinny/Schema.pm
 template: |
-  package [% module %]::Model::Schema;
+  package [% module %]::Skinny::Schema;
   use strict;
   use warnings;
   
