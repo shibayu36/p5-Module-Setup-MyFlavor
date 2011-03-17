@@ -33,20 +33,27 @@ template: |
   name '[% dist %]';
   all_from 'lib/[% module_unix_path %].pm';
   
-  # requires '';
+  # Mojolicious
   requires 'Mojolicious';
   requires 'Mojolicious::Controller';
   requires 'Mojolicious::Static';
   requires 'MojoX::Renderer::Xslate';
   requires 'Mojolicious::Plugin::CSRFDefender';
   
+  # Xslate
   requires 'Text::Xslate';
-  requires 'DBIx::Skinny';
-  requires 'DBIx::Skinny::Schema';
+  
+  # Teng
+  requires 'Teng';
+  requires 'Teng::Schema::Declare';
+  
+  # DateTime
   requires 'DateTime';
   requires 'DateTime::Format::Strptime';
   requires 'DateTime::Format::MySQL';
   requires 'DateTime::TimeZone';
+  
+  # File
   requires 'File::Basename';
   requires 'File::Spec';
   
@@ -710,12 +717,6 @@ template: |
   use warnings;
   
   use base qw(Teng);
-  
-  use DBIx::Skinny connect_info => +{
-      dsn => 'dbi:mysql:[% module.split("::").join("_") FILTER lower %]',
-      username => 'root',
-      password => '',
-  };
   
   my $connect_info = {
       dsn => 'dbi:mysql:[% module.split("::").join("_") FILTER lower %]',
