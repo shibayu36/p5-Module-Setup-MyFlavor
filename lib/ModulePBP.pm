@@ -18,6 +18,14 @@ ModulePBP - pack from pbp
 __DATA__
 
 ---
+file: .shipit
+template: |
+  # auto-generated shipit config file.
+  steps = FindVersion, ChangeVersion, CheckChangeLog, DistTest, Commit, Tag, MakeDist, UploadCPAN
+  
+  git.tagpattern = %v
+  git.push_to = origin
+---
 file: Changes
 template: |
   Revision history for [% module %]
