@@ -46,6 +46,27 @@ template: |
   auto_install;
   WriteAll;
 ---
+file: MANIFEST.SKIP
+template: |
+  ~$
+  \.bak$
+  .git/
+  blib/
+  pm_to_blib
+  ^\.prove$
+  ^ignore\.txt$
+  ^Makefile$
+  ^Makefile\.old
+  ^MANIFEST\.
+  \.tar\.gz
+  \.lwpcookies
+  cover_db
+  Mojolicious-Plugin-CSRFDefender-
+  \.shipit.*
+  ^\.#
+  ^\.prove
+  ^\.gitignore$
+---
 file: README
 template: |
   [% dist %] version 0.0.1
