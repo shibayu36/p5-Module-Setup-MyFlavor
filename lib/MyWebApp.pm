@@ -118,11 +118,14 @@ template: |
   
   [% config.author %]
 ---
-file: config/config.development.json
-template: "{\n    \"mode\" : \"development\"\n}"
+file: config/config.development.pl
+template: |
+  {
+      mode => "development",
+  }
 ---
-file: config/config.json
-template: "{\n  \"mode\" : \"none\"\n}"
+file: config/config.pl
+template: "{\n  mode => \"none\",\n}\n"
 ---
 dir: inc/.author
 ---
@@ -640,9 +643,9 @@ template: |
       $static->root('static');
       $self->static($static);
   
-      # json config plugin
-      $self->plugin('json_config', {
-          file => 'config/config.json',
+      # config plugin
+      $self->plugin('config', {
+          file => 'config/config.pl',
       });
   
       # Defend CSRF
@@ -718,20 +721,29 @@ template: |
   
   use base qw(Teng);
   
-  my $connect_info = {
-      dsn => 'dbi:mysql:[% module.split("::").join("_") FILTER lower %]',
-      username => 'root',
-      password => '',
-  }
+  my $connect_info = [
+      'dbi:mysql:[% module.split("::").join("_") FILTER lower %]',
+      'nobody',
+      'nobody',
+  ];
+  
+  use Exporter::Lite;
+  our @EXPORT = qw(
+      teng
+  );
   
   sub new {
       my ($class, $args) = @_;
       $args ||= {};
-      if (undefined $args->{connect_info}) {
+      unless (defined $args->{connect_info}) {
           $args->{connect_info} = $connect_info;
       }
   
       return $class->SUPER::new($args);
+  }
+  
+  sub teng {
+      return __PACKAGE__->new;
   }
   
   1;
@@ -841,6 +853,74 @@ template: |
   my $t = Test::Mojo->new(app => '[% module %]');
   $t->get_ok('/')->status_is(200)->content_type_is('text/html;charset=UTF-8')
     ->content_like(qr/Mojolicious Web Framework/i);
+---
+file: t/lib/Test/____var-module_path-var____.pm
+template: |
+  package Test::[% module %];
+  use strict;
+  use warnings;
+  
+  use Path::Class;
+  # pathに合わせて
+  # use lib file(__FILE__)->dir->parent->parent->parent->parent->subdir('lib')->stringify;
+  
+  BEGIN {
+      $ENV{DBI_REWRITE_DSN} = 1;
+      $ENV{PLACK_ENV} = 'test';
+  }
+  
+  use DBIx::RewriteDSN -rules => q{
+      ^dbi:mysql:([0-9a-zA-Z_]+)$ dbi:mysql:dbname=$1_test;host=127.0.0.1
+  };
+  
+  use [% module %]::Teng;
+  
+  use Test::More;
+  
+  use Exporter::Lite;
+  our @EXPORT = qw(
+      create_user
+  );
+  push @EXPORT, @Test::More::EXPORT;
+  
+  # sub create_user {
+  #     my %args = @_;
+  #     require String::Random;
+  #     $args{name} ||= String::Random->new->randregex('[a-zA-Z0-9]{20}');
+  #     $args{room} ||= String::Random->new->randregex('[a-zA-Z0-9]{20}');
+  #     $args{team} ||= String::Random->new->randregex('[a-zA-Z0-9]{20}');
+  #     $args{mail} ||= $args{name} . '.' . rand() . '@test';
+  
+  #     my $teng = Kumano::RollCall::Teng->new;
+  #     return $teng->insert('user' => {
+  #         name => $args{name},
+  #         room => $args{room},
+  #         team => $args{team},
+  #         mail => $args{mail},
+  #     });
+  # }
+  
+  # 1;
+---
+file: t/teng/teng.t
+template: |
+  package test::[% module %]::Teng;
+  use strict;
+  use warnings;
+  
+  use Path::Class;
+  use lib file(__FILE__)->dir->parent->parent->subdir('lib')->stringify;
+  use lib file(__FILE__)->dir->parent->subdir('lib')->stringify;
+  
+  use base qw(Test::Class);
+  
+  sub _dummy : Tests {
+      ok 1;
+  }
+  
+  __PACKAGE__->runtests;
+  
+  1;
 ---
 file: templates/exception.html.ep
 template: |
