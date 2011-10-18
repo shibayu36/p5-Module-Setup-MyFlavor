@@ -51,7 +51,6 @@ template: |
   
   recursive_author_tests('xt');
   
-  auto_install;
   WriteAll;
 ---
 file: MANIFEST.SKIP
@@ -69,7 +68,7 @@ template: |
   \.tar\.gz
   \.lwpcookies
   cover_db
-  Mojolicious-Plugin-CSRFDefender-
+  [% dist %]-
   \.shipit.*
   ^\.#
   ^\.prove
