@@ -575,6 +575,8 @@ file: lib/____var-module_path-var____.pm
 template: |
   package [% module %];
   
+  use appconfig;
+  
   use [% module %]::Context;
   
   use Class::Load qw(load_class);
@@ -623,8 +625,6 @@ template: |
           };
   
           $class->before_dispatch($context);
-  
-          warn $action;
   
           my $handler = $engine->can($action) or die 501;
   
@@ -676,13 +676,27 @@ template: |
   
   1;
 ---
-file: lib/____var-module_path-var____/Config.pm
+file: lib/appconfig.pm
 template: |
-  package [% module %]::Config;
+  package appconfig;
   
   use strict;
   use warnings;
   use utf8;
+  
+  sub import {
+      strict->import;
+      utf8->import;
+      warnings->import;
+  }
+  
+  1;
+---
+file: lib/____var-module_path-var____/Config.pm
+template: |
+  package [% module %]::Config;
+  
+  use appconfig;
   
   use [% module %]::Config::Route;
   
@@ -726,9 +740,7 @@ file: lib/____var-module_path-var____/Context.pm
 template: |
   package [% module %]::Context;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use [% module %]::Request;
   use [% module %]::Util qw(cached_sub);
@@ -833,9 +845,7 @@ file: lib/____var-module_path-var____/DBI.pm
 template: |
   package [% module %]::DBI;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use parent 'DBIx::Sunny';
   use SQL::NamedPlaceholder;
@@ -928,9 +938,7 @@ file: lib/____var-module_path-var____/Request.pm
 template: |
   package [% module %]::Request;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use parent 'Plack::Request';
   
@@ -964,9 +972,7 @@ file: lib/____var-module_path-var____/Util.pm
 template: |
   package [% module %]::Util;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use Carp ();
   use Exporter::Lite;
@@ -1014,9 +1020,8 @@ template: |
 file: lib/____var-module_path-var____/Config/Route.pm
 template: |
   package [% module %]::Config::Route;
-  use strict;
-  use warnings;
-  use utf8;
+  
+  use appconfig;
   
   use Router::Simple::Declare;
   
@@ -1034,9 +1039,7 @@ file: lib/____var-module_path-var____/DBI/Factory.pm
 template: |
   package [% module %]::DBI::Factory;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use [% module %]::Config;
   use Carp ();
@@ -1072,9 +1075,7 @@ file: lib/____var-module_path-var____/Engine/Index.pm
 template: |
   package [% module %]::Engine::Index;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   sub default {
       my ($c) = @_;
@@ -1088,9 +1089,7 @@ file: lib/____var-module_path-var____/View/Xslate.pm
 template: |
   package [% module %]::View::Xslate;
   
-  use strict;
-  use warnings;
-  use utf8;
+  use appconfig;
   
   use [% module %]::Config;
   
