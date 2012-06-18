@@ -92,6 +92,13 @@ template: |
   requires 'Starlet';
   requires 'Server::Starter';
   
+  # ---- for test ----
+  test_requires 'Test::More';
+  test_requires 'Test::Exception';
+  test_requires 'Test::Differences';
+  test_requires 'Test::Class';
+  test_requires 'Test::WWW::Mechanize::PSGI';
+  
   test_requires 'Devel::KYTProf';
   
   WriteAll;
@@ -700,7 +707,7 @@ template: |
   
   use [% module %]::Config::Route;
   
-  use Config::ENV 'PLACK_ENV', export => 'config';
+  use Config::ENV '[% module.split("::").join("_") FILTER upper %]_ENV', export => 'config';
   use Path::Class qw(file);
   
   my $Router = [% module %]::Config::Route->make_router;
@@ -717,6 +724,9 @@ template: |
       origin => "http://local.hatena.ne.jp:$ENV{SERVER_PORT}",
   };
   
+  config production => {
+  };
+  
   config local => {
       parent('default'),
       'db.master' => {
@@ -727,11 +737,23 @@ template: |
       'db.slave' => {
           user     => 'nobody',
           password => 'nobody',
-          dsn      => 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %]_test;host=localhost',
+          dsn      => 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %];host=localhost',
       },
   };
   
-  config production => {
+  config test => {
+      parent('default'),
+  
+      'db.master' => {
+          user     => 'nobody',
+          password => 'nobody',
+          dsn      => 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %]_test;host=localhost',
+      },
+      'db.slave' => {
+          user     => 'nobody',
+          password => 'nobody',
+          dsn      => 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %]_test;host=localhost',
+      },
   };
   
   1;
@@ -1190,7 +1212,7 @@ template: |
       @ARGV,
   );
   
-  $ENV{RIDGE_ENV} = $runner->{env}; # -E は RIDGE_ENV に伝播
+  $ENV{[% module.split("::").join("_") FILTER upper %]_ENV} = $runner->{env}; # -E は [% module.split("::").join("_") FILTER upper %]_ENV に伝播
   $runner->{env}  ||= 'local';
   
   my $options = +{ @{ $runner->{options} } };
@@ -1252,6 +1274,214 @@ dir: static/css
 dir: static/images
 ---
 dir: static/js
+---
+file: t/engine/index.t
+template: |
+  package t::[% module %]::Engine::Index;
+  
+  use appconfig;
+  use lib 't/lib';
+  
+  use Test::[% module %] -class, -mech;
+  
+  sub _get : Test(3) {
+      my $mech = create_mech;
+      $mech->get_ok('/');
+      $mech->title_is('[% module %]');
+      $mech->content_contains('[% dist %]');
+  }
+  
+  1;
+---
+file: t/lib/Test/____var-module_path-var____.pm
+template: |
+  package Test::[% module %];
+  
+  use appconfig;
+  
+  use Path::Class;
+  use lib file(__FILE__)->dir[% FOREACH p IN module.split("::") %]->parent[% END %]->parent->parent->subdir('lib')->stringify;
+  use lib glob file(__FILE__)->dir[% FOREACH p IN module.split("::") %]->parent[% END %]->parent->parent->subdir('modules/*/lib')->stringify;
+  
+  BEGIN {
+      $ENV{[% module.split("::").join("_") FILTER upper %]_ENV} = 'test';
+      $ENV{PLACK_ENV} = 'test';
+      $ENV{DBI_REWRITE_DSN} ||= 1;
+  }
+  
+  use DBIx::RewriteDSN -rules => q<
+      ^(.*?;mysql_socket=.*)$ $1
+      ^.*?:dbname=([^;]+?)(?:_test)?(?:;.*)?$ dbi:mysql:dbname=$1_test;host=localhost
+      ^(DBI:Sponge:)$ $1
+      ^(.*)$ dsn:unsafe:got=$1
+  >;
+  
+  sub import {
+      my $class = shift;
+  
+      strict->import;
+      warnings->import;
+      utf8->import;
+  
+      my ($package, $file) = caller;
+      # 先に読み込むべきモジュールを先に記述する
+      # -common は暗黙的に読み込まれる
+      my @options = (
+          -tt => qq[
+              use Test::Time;
+          ],
+          -class => qq[
+              use parent 'Test::Class';
+              END {
+                  $package->runtests if \$0 eq "\Q$file\E";
+              }
+          ],
+          -common => qq[
+              use Test::More;
+              use Test::Exception;
+              use Test::Differences;
+          ],
+          -mech => qq[
+              use HTTP::Status qw(:constants);
+              use Test::[% module %]::Mechanize;
+          ],
+      );
+  
+      my %specified = map { $_ => 1 } -common, @_;
+  
+      my $code = '';
+      while (my ($option, $fragment) = splice @options, 0, 2) {
+          $code .= $fragment if delete $specified{$option};
+      }
+      die 'Invalid options: ' . join ', ', keys %specified if %specified;
+  
+      eval "package $package; $code";
+      die $@ if $@;
+  }
+  
+  1;
+---
+file: t/lib/Test/____var-module_path-var____/Mechanize.pm
+template: |
+  package Test::[% module %]::Mechanize;
+  
+  use appconfig;
+  
+  use parent qw(Test::WWW::Mechanize::PSGI);
+  
+  use Test::More ();
+  
+  use Exporter::Lite;
+  our @EXPORT = qw(create_mech);
+  
+  use [% module %];
+  
+  sub create_mech (;%) {
+      return __PACKAGE__->new(@_);
+  }
+  
+  sub new {
+      my ($class, %opts) = @_;
+  
+      my $self = $class->SUPER::new(
+          app     => [% module %]->as_psgi,
+          %opts,
+      );
+  
+      return $self;
+  }
+  
+  1;
+---
+file: t/object/config.t
+template: |
+  package t::[% module %]::Config;
+  
+  use appconfig;
+  use lib 't/lib';
+  
+  use Test::[% module %] -class;
+  
+  use [% module %]::Config;
+  
+  sub _config : Test(1) {
+      is(config->param('origin'), "http://local.hatena.ne.jp:3000");
+  }
+  
+  1;
+---
+file: t/object/dbi-factory.t
+template: |
+  package t::[% module %]::DBI::Factory;
+  use appconfig;
+  
+  use lib 't/lib';
+  
+  use Test::[% module %] -class;
+  
+  use [% module %]::DBI::Factory;
+  
+  sub _use : Test(1) {
+      use_ok '[% module %]::DBI::Factory';
+  }
+  
+  sub _dbconfig : Test(6) {
+      my $f = [% module %]::DBI::Factory->new;
+  
+      my $master = $f->dbconfig('master');
+      is $master->{user}, 'nobody';
+      is $master->{password}, 'nobody';
+      is $master->{dsn}, 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %];host=localhost';
+  
+      my $slave = $f->dbconfig('slave');
+      is $slave->{user}, 'nobody';
+      is $slave->{password}, 'nobody';
+      is $slave->{dsn}, 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %];host=localhost';
+  }
+  
+  sub _dbh : Test(2) {
+      my $f = [% module %]::DBI::Factory->new;
+  
+      my $master = $f->dbh('master');
+      ok $master;
+  
+      my $slave = $f->dbh('slave');
+      ok $slave;
+  }
+  
+  1;
+---
+file: t/object/dbi.t
+template: |
+  package t::[% module %]::DBI;
+  
+  use appconfig;
+  use lib 't/lib';
+  
+  use Test::[% module %] -class;
+  
+  sub _use : Test(1) {
+      use_ok '[% module %]::DBI';
+  }
+  
+  1;
+---
+file: t/object/util.t
+template: |
+  package t::[% module %]::DBI::Factory;
+  
+  use appconfig;
+  use lib 't/lib';
+  
+  use Test::[% module %] -class;
+  
+  use [% module %]::Util;
+  
+  sub _use : Test(1) {
+      use_ok '[% module %]::Util';
+  }
+  
+  1;
 ---
 file: templates/_wrapper.tt
 template: |
