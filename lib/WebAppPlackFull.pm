@@ -87,6 +87,7 @@ template: |
   requires 'DBIx::Sunny';
   requires 'SQL::NamedPlaceholder';
   requires 'Scope::Container::DBI';
+  requires 'SQL::Maker';
   
   # ---- for server ----
   requires 'Starlet';
@@ -1067,6 +1068,7 @@ template: |
   use Carp ();
   
   use Scope::Container::DBI;
+  use SQL::Maker;
   
   use Class::Accessor::Lite (
       new => 1,
@@ -1089,6 +1091,11 @@ template: |
           RootClass => '[% module %]::DBI',
       });
       return $dbh;
+  }
+  
+  sub sql {
+      my ($self) = @_;
+      return $self->{sql} ||= SQL::Maker->new(driver => 'mysql');
   }
   
   1;
@@ -1344,6 +1351,9 @@ template: |
           -mech => qq[
               use HTTP::Status qw(:constants);
               use Test::[% module %]::Mechanize;
+          ],
+          -factory => qq[
+              use Test::[% module %]::Factory;
           ],
       );
   
