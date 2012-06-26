@@ -73,6 +73,8 @@ template: |
   requires 'Router::Simple';
   requires 'Sub::Name';
   requires 'Text::Xslate';
+  requires 'Text::Xslate::Bridge::TT2Like';
+  requires 'Try::Tiny';
   requires 'URI';
   requires 'URI::QueryParam';
   
@@ -585,11 +587,14 @@ template: |
   
   use appconfig;
   
-  use [% module %]::Context;
-  
   use Class::Load qw(load_class);
   use Guard;  # guard
   use HTTP::Status ();
+  use Try::Tiny;
+  
+  use [% module %]::Error;
+  use [% module %]::Context;
+  use [% module %]::Config;
   
   sub as_psgi {
       my $class = shift;
@@ -605,9 +610,9 @@ template: |
   
       my $context = [% module %]::Context->from_env($env);
       my $dispatch;
-      eval {
-          my $route = $context->route or die 404;
-          $route->{engine} or die 404;
+      try {
+          my $route = $context->route or [% module %]::Error->throw(404);
+          $route->{engine} or [% module %]::Error->throw(404);
           $env->{'[% module.split("::").join(".") FILTER lower %].route'} = $route;
   
           my $engine = join '::', __PACKAGE__, 'Engine', $route->{engine};
@@ -615,51 +620,38 @@ template: |
           $dispatch = "$engine#$action";
   
           load_class $engine;
-          my $context_class = $ContextClass->{$engine} ||= do {
-              my $pkg = ref $context;
-              if (my $roles = $engine->can('ROLES')) {
-                  $pkg = join '::', __PACKAGE__, 'Context', '__MIXED__', $route->{engine};
-                  $roles = join ' ', map { "[% module %]::Context::Role::$_" } @{ $engine->$roles };
-                  eval <<"...";
-  package $pkg;
-  use parent qw(
-      [% module %]::Context
-      $roles
-  );
-  ...
-                  die $@ if $@;
-              }
-              $pkg;
-          };
   
           $class->before_dispatch($context);
   
-          my $handler = $engine->can($action) or die 501;
+          my $handler = $engine->can($action) or [% module %]::Error->throw(501);
   
-          bless $context, $context_class;
-          my $g = guard { bless $context, '[% module %]::Context' };
           $context->$handler;
-      };
-      $class->after_dispatch($context);
-  
-      my $res;
-      if (my $e = $@) {
-          if (my ($code) = ($e =~ /^(\d\d\d) at/)) {
-              $res = $context->request->new_response(
-                  $code,
-                  [ 'Content-Type' => 'text/plain' ],
-                  [ "$code " . HTTP::Status::status_message($code) ]
-              );
-          } else {
-              die $e;
-          }
-      } else {
-          $res = $context->response;
       }
+      catch {
+          my $e = $_;
+          my $res = $context->request->new_response;
+          if (eval { $e->isa('[% module %]::Error') }) {
+              my $message = $e->{message} || HTTP::Status::status_message($e->{code});
+              $res->code($e->{code});
+              $res->header('X-Error-Message' => $message);
+              $res->content_type('text/plain');
+              $res->content($message);
+          }
+          else {
+              my $message = (config->env =~ /production/) ? 'Internal Server Error' : $e;
+              $res->code(500);
+              $res->content_type('text/plain');
+              $res->header('X-Error-Message' => $message);
+              $res->content($message);
+          }
+          $context->response($res);
+      }
+      finally {
+          $class->after_dispatch($context);
+      };
   
-      $res->headers->header(X_Dispatch => $dispatch);
-  
-      return $res->finalize;
+      $context->res->headers->header(X_Dispatch => $dispatch);
+      return $context->res->finalize;
   }
   
   sub before_dispatch {
@@ -954,6 +946,28 @@ template: |
   
   package [% module %]::DBI::st;
   use parent -norequire => 'DBIx::Sunny::st';
+  
+  1;
+---
+file: lib/____var-module_path-var____/Error.pm
+template: |
+  package [% module %]::Error;
+  
+  use appconfig;
+  
+  sub throw {
+      my ($class, $code, $message, %opts) = @_;
+      die $class->new(
+          code    => $code,
+          message => $message,
+          %opts,
+      );
+  }
+  
+  sub new {
+      my ($class, %opts) = @_;
+      bless \%opts, $class;
+  }
   
   1;
 ---
