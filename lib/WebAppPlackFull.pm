@@ -90,6 +90,7 @@ template: |
   requires 'SQL::NamedPlaceholder';
   requires 'Scope::Container::DBI';
   requires 'SQL::Maker';
+  requires 'DBD::mysql';
   
   # ---- for server ----
   requires 'Starlet';
@@ -143,7 +144,7 @@ template: |
   	# This is not enforced yet, but will be some time in the next few
   	# releases once we can make sure it won't clash with custom
   	# Module::Install extensions.
-  	$VERSION = '1.04';
+  	$VERSION = '1.06';
   
   	# Storage for the pseudo-singleton
   	$MAIN    = undef;
@@ -579,7 +580,7 @@ template: |
   
   1;
   
-  # Copyright 2008 - 2011 Adam Kennedy.
+  # Copyright 2008 - 2012 Adam Kennedy.
 ---
 file: lib/____var-module_path-var____.pm
 template: |
@@ -595,6 +596,7 @@ template: |
   use [% module %]::Error;
   use [% module %]::Context;
   use [% module %]::Config;
+  use [% module %]::Logger qw(CRIT);
   
   sub as_psgi {
       my $class = shift;
@@ -638,6 +640,7 @@ template: |
               $res->content($message);
           }
           else {
+              CRIT "%s", $e;
               my $message = (config->env =~ /production/) ? 'Internal Server Error' : $e;
               $res->code(500);
               $res->content_type('text/plain');
@@ -971,6 +974,102 @@ template: |
   
   1;
 ---
+file: lib/____var-module_path-var____/Logger.pm
+template: |
+  package [% module %]::Logger;
+  
+  use appconfig;
+  
+  use Path::Class;
+  use JSON::XS;
+  use Exporter::Lite;
+  
+  our @EXPORT_OK = qw(DEBUG INFO WARN CRIT);
+  our $HANDLE = \*STDERR;
+  our $PRINT = sub {
+      my ($time, $level, $mess, $trace) = @_;
+      print { $HANDLE } "$time [$level] $mess @ $trace\n";
+  };
+  
+  sub _log {
+      my ($level) = @_;
+      if ($level eq 'DEBUG' && !$ENV{DEBUG}) {
+          sub { };
+      } else {
+          sub {
+              my @caller = caller(0);
+              my $time  = do {
+                  my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime(time);
+                  sprintf(
+                      "%04d-%02d-%02d %02d:%02d:%02d",
+                      $year + 1900,
+                      $mon + 1, $mday, $hour, $min, $sec
+                  );
+              };
+              my $trace = "$caller[1] # $caller[2]";
+              my $mess  = sprintf(shift, map { [% module %]::Logger->new($_) } @_);
+              $mess =~ s{\s+}{ }g;
+              $PRINT->($time, $level, $mess, $trace);
+          };
+      }
+  }
+  
+  *DEBUG = _log('DEBUG');
+  *INFO  = _log('INFO');
+  *WARN  = _log('WARN');
+  *CRIT  = _log('CRIT');
+  
+  # copy from Log::Minimal;
+  package
+      [% module %]::Logger;
+  
+  use strict;
+  use warnings;
+  use base qw/Exporter/;
+  use Data::Dumper;
+  use Scalar::Util qw/blessed/;
+  
+  use overload
+      '""' => \&stringify,
+      '0+' => \&numeric,
+      fallback => 1;
+  
+  sub new {
+      my ($class, $value) = @_;
+      bless \$value, $class;
+  }
+  
+  sub stringify {
+      my $self = shift;
+      my $value = $$self;
+      if ( blessed($value) && (my $stringify = overload::Method( $value, '""' ) || overload::Method( $value, '0+' )) ) {
+          $value = $stringify->($value);
+      }
+      dumper($value);
+  }
+  
+  sub numeric {
+      my $self = shift;
+      my $value = $$self;
+      if ( blessed($value) && (my $numeric = overload::Method( $value, '0+' ) || overload::Method( $value, '""' )) ) {
+          $value = $numeric->($value);
+      }
+      $value;
+  }
+  
+  sub dumper {
+      my $value = shift;
+      if ( defined $value && ref($value) ) {
+          local $Data::Dumper::Terse = 1;
+          local $Data::Dumper::Indent = 0; 
+          $value = Data::Dumper::Dumper($value);
+      }
+      $value;
+  }
+  
+  1;
+  __END__
+---
 file: lib/____var-module_path-var____/Request.pm
 template: |
   package [% module %]::Request;
@@ -1182,30 +1281,61 @@ template: |
   use Plack::Middleware::Static;
   
   my $app = [% module %]->as_psgi;
+  my $root = config->root;
   
   builder {
       # enable 'ReverseProxy';
       enable 'Runtime';
       enable 'Head';
   
-      enable 'AccessLog::Timed', (
-          format => join("\t",
-              'time:%t',
-              'host:%h',
-              'domain:%V',
-              'req:%r',
-              'status:%>s',
-              'size:%b',
-              'referer:%{Referer}i',
-              'ua:%{User-Agent}i',
-              # 'bcookie:%{bcookie}e',
-              'taken:%D',
-              # 'runtime:%{X-Runtime}o',
-              'xgid:%{X-Generated-Id}o',
-              'xdispatch:%{X-Dispatch}o',
-              'xrev:%{X-Revision}o',
-          )
-      ) if config->env eq 'production';
+      if (config->env eq 'production') {
+          my $access_log = Path::Class::file($ENV{ACCESS_LOG} || "$root/log/access_log");
+          my $error_log  = Path::Class::file($ENV{ERROR_LOG}  || "$root/log/error_log");
+  
+          $_->dir->mkpath for $access_log, $error_log;
+  
+          my $fh_access = $access_log->open('>>')
+              or die "Cannot open >> $access_log: $!";
+          my $fh_error  = $error_log->open('>>')
+              or die "Cannot open >> $error_log: $!";
+  
+          $_->autoflush(1) for $fh_access, $fh_error;
+  
+          enable 'AccessLog::Timed', (
+              logger => sub {
+                  print $fh_access @_;
+              },
+              format => join("\t",
+                  'time:%t',
+                  'host:%h',
+                  'domain:%V',
+                  'req:%r',
+                  'status:%>s',
+                  'size:%b',
+                  'referer:%{Referer}i',
+                  'ua:%{User-Agent}i',
+                  # 'bcookie:%{bcookie}e',
+                  'taken:%D',
+                  # 'runtime:%{X-Runtime}o',
+                  'xgid:%{X-Generated-Id}o',
+                  'xdispatch:%{X-Dispatch}o',
+                  'xrev:%{X-Revision}o',
+              )
+          );
+  
+          enable sub {
+              my $app = shift;
+              sub {
+                  my $env = shift;
+                  local $[% module %]::Logger::PRINT = sub {
+                      my ($time, $level, $mess, $trace) = @_;
+                      my $url = sprintf '%s://%s%s', $env->{'psgi.url_scheme'} || 'http', $env->{HTTP_HOST}, $env->{REQUEST_URI};
+                      print { $fh_error } "$time [$level] $mess @ $trace <$env->{REQUEST_METHOD} $url>\n";
+                  };
+                  return $app->($env);
+              };
+          };
+      }
   
       enable 'Static', path => qr<^/(?:images|js|css)/>, root => './static/';
       enable 'Static', path => qr<^/favicon\.ico$>,      root => './static/images';
