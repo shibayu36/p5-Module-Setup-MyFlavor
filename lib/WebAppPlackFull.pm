@@ -61,6 +61,7 @@ template: |
   
   # ---- for framework ---
   requires 'Carp';
+  requires 'JSON::XS';
   requires 'Class::Accessor::Lite';
   requires 'Class::Load';
   requires 'Config::ENV';
