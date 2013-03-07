@@ -1537,7 +1537,7 @@ template: |
   
   1;
 ---
-file: t/lib/Test/Hatena/Sample.pm
+file: t/lib/Test/____var-module_path-var____.pm
 template: |
   package Test::[% module %];
   
@@ -1607,7 +1607,7 @@ template: |
   
   1;
 ---
-file: t/lib/Test/Hatena/Sample/Mechanize.pm
+file: t/lib/Test/____var-module_path-var____/Mechanize.pm
 template: |
   package Test::[% module %]::Mechanize;
   
