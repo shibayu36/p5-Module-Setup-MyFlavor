@@ -31,6 +31,7 @@ template: |
   requires 'Carp';
   requires 'JSON::XS';
   requires 'Class::Accessor::Lite';
+  requires 'Class::Accessor::Lite::Lazy';
   requires 'Class::Load';
   requires 'Config::ENV';
   requires 'Encode';
@@ -730,7 +731,6 @@ template: |
   use utf8;
   
   use [% module %]::Request;
-  use [% module %]::Util qw(cached_sub);
   use [% module %]::Config;
   
   use Carp ();
@@ -738,9 +738,10 @@ template: |
   use URI;
   use URI::QueryParam;
   
-  use Class::Accessor::Lite (
-      new => 1,
-      rw  => [ 'env' ],
+  use Class::Accessor::Lite::Lazy (
+      rw_lazy => [ qw(request response route stash) ],
+      rw      => [ qw(env) ],
+      new     => 1,
   );
   
   use [% module %]::Error;
@@ -753,27 +754,27 @@ template: |
       return $class->new(env => $env);
   }
   
-  cached_sub request => sub {
+  sub _build_request {
       my $self = shift;
   
       return undef unless $self->env;
       return [% module %]::Request->new($self->env);
   };
   
-  cached_sub response => sub {
+  sub _build_response {
       my $self = shift;
       return $self->request->new_response(200);
   };
   
-  *req = \&request;
-  *res = \&response;
-  
-  cached_sub route => sub {
+  sub _build_route {
       my $self = shift;
       return [% module %]::Config->router->match($self->env);
   };
   
-  cached_sub stash => sub { +{} };
+  sub _build_stash { +{} };
+  
+  *req = \&request;
+  *res = \&response;
   
   ### HTTP Response
   
@@ -1108,7 +1109,6 @@ template: |
   use utf8;
   
   use Carp ();
-  use Exporter::Lite;
   use Sub::Name;
   
   use DateTime;
@@ -1116,48 +1116,11 @@ template: |
   
   use [% module %]::Config;
   
-  our @EXPORT_OK = qw(
-      cached_sub
-  );
-  
   sub datetime_from_db ($) {
       my $dt = DateTime::Format::MySQL->parse_datetime( shift );
-      bless $dt, 'DateTime';
       $dt->set_time_zone(config->param('db_timezone'));
       $dt->set_formatter( DateTime::Format::MySQL->new );
       $dt;
-  }
-  
-  # cached_sub foo => sub { ... };
-  # cached_sub foo => '_foo_cache', sub { .. };
-  sub cached_sub {
-      my ($name, $cache_key, $builder);
-  
-      if (@_ == 2) {
-          ( $name, $cache_key, $builder ) = ( $_[0], $_[0], $_[1] );
-      } elsif (@_ == 3) {
-          ( $name, $cache_key, $builder ) = @_;
-      } else {
-          Carp::croak;
-      }
-  
-      my $pkg = caller;
-  
-      my $builder_name = "__build__$pkg\::$name";
-         $builder_name =~ s/:/_/g;
-      $builder = subname $builder_name, $builder;
-  
-      my $code = subname "$pkg\::$name", sub {
-          my $self = shift;
-          if (@_) {
-              return $self->{$cache_key} = $_[0];
-          }
-          return $self->{$cache_key} if exists $self->{$cache_key};
-          return $self->{$cache_key} = $self->$builder;
-      };
-  
-      no strict 'refs';
-      *{"$pkg\::$name"} = $code;
   }
   
   1;
