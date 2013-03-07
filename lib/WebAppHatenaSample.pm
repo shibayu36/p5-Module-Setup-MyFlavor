@@ -1,5 +1,5 @@
 
-package WebAppPlack;
+package WebAppHatenaSample;
 use strict;
 use warnings;
 use base 'Module::Setup::Flavor';
@@ -7,11 +7,11 @@ use base 'Module::Setup::Flavor';
 
 =head1
 
-WebAppPlack - pack from webapp-hatena-sample
+WebAppHatenaSample - pack from webapp-hatena-sample
 
 =head1 SYNOPSIS
 
-  WebAppPlack-setup --init --flavor-class=+WebAppPlack new_flavor
+  WebAppHatenaSample-setup --init --flavor-class=+WebAppHatenaSample new_flavor
 
 =cut
 
