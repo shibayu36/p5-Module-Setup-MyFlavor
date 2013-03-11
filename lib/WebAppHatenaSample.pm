@@ -739,7 +739,7 @@ template: |
   use URI::QueryParam;
   
   use Class::Accessor::Lite::Lazy (
-      rw_lazy => [ qw(request response route stash) ],
+      rw_lazy => [ qw(request response route stash db) ],
       rw      => [ qw(env) ],
       new     => 1,
   );
@@ -836,9 +836,14 @@ template: |
   }
   
   ### DB Access
+  sub _build_db {
+      my ($self) = @_;
+      return [% module %]::DBI::Factory->new;
+  }
+  
   sub dbh {
       my ($self, $name) = @_;
-      return [% module %]::DBI::Factory->dbh($name);
+      return $self->db->dbh($name);
   }
   
   1;
@@ -1168,16 +1173,21 @@ template: |
   
   use Scope::Container::DBI;
   
+  sub new {
+      my ($class) = @_;
+      return bless +{}, $class;
+  }
+  
   sub dbconfig {
-      my ($class, $name) = @_;
+      my ($self, $name) = @_;
       my $dbconfig = config->param('db') // Carp::croak 'required db setting';
       return $dbconfig->{$name} // Carp::croak qq(db config for '$name' does not exist);
   }
   
   sub dbh {
-      my ($class, $name) = @_;
+      my ($self, $name) = @_;
   
-      my $db_config = $class->dbconfig($name);
+      my $db_config = $self->dbconfig($name);
       my $user      = $db_config->{user} or Carp::croak qq(user for '$name' does not exist);
       my $password  = $db_config->{password} or Carp::croak qq(password for '$name' does not exist);
       my $dsn       = $db_config->{dsn} or Carp::croak qq(dsn for '$name' does not exist);
@@ -1674,14 +1684,16 @@ template: |
   }
   
   sub _dbconfig : Test(3) {
-      my $db_config = [% module %]::DBI::Factory->dbconfig('[% module.split("::").join("_") FILTER lower %]');
+      my $dbfactory = [% module %]::DBI::Factory->new;
+      my $db_config = $dbfactory->dbconfig('hatena_sample');
       is $db_config->{user}, 'nobody';
       is $db_config->{password}, 'nobody';
-      is $db_config->{dsn}, 'dbi:mysql:dbname=[% module.split("::").join("_") FILTER lower %]_test;host=localhost';
+      is $db_config->{dsn}, 'dbi:mysql:dbname=hatena_sample_test;host=localhost';
   }
   
   sub _dbh : Test(1) {
-      my $dbh = [% module %]::DBI::Factory->dbh('[% module.split("::").join("_") FILTER lower %]');
+      my $dbfactory = [% module %]::DBI::Factory->new;
+      my $dbh = $dbfactory->dbh('hatena_sample');
       ok $dbh;
   
   }
