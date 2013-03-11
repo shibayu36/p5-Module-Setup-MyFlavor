@@ -675,7 +675,7 @@ template: |
   
   use [% module %]::Config::Route;
   
-  use Config::ENV 'HATENA_SAMPLE_ENV', export => 'config';
+  use Config::ENV '[% module.split("::").join("_") FILTER upper %]_ENV', export => 'config';
   use Path::Class qw(file);
   
   my $Router = [% module %]::Config::Route->make_router;
