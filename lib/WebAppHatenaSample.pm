@@ -1284,8 +1284,8 @@ template: |
   
   sub created {
       my ($self) = @_;
-      $self->{_created} ||= eval { [% module %]::Util::datetime_from_db(
-          $self->{created} )
+      $self->{_created} ||= eval {
+          [% module %]::Util::datetime_from_db($self->{created});
       };
   }
   
