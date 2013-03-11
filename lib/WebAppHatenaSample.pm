@@ -613,7 +613,7 @@ template: |
   
           my $handler = $engine->can($action) or [% module %]::Error->throw(501);
   
-          $context->$handler;
+          $engine->$handler($context);
       }
       catch {
           my $e = $_;
@@ -1209,7 +1209,7 @@ template: |
   use utf8;
   
   sub default {
-      my ($c) = @_;
+      my ($class, $c) = @_;
       $c->html('index.html');
   }
   
@@ -1227,7 +1227,7 @@ template: |
   use FormValidator::Lite;
   
   sub list {
-      my ($c) = @_;
+      my ($class, $c) = @_;
   
       my $users = $c->dbh('[% module.split("::").join("_") FILTER lower %]')->select_all_as(q[
           SELECT * FROM user
@@ -1240,7 +1240,7 @@ template: |
   }
   
   sub register {
-      my ($c) = @_;
+      my ($class, $c) = @_;
   
       my $validator = FormValidator::Lite->new($c->req);
       $validator->check(
