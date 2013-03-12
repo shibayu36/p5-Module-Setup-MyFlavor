@@ -592,7 +592,6 @@ template: |
       };
   }
   
-  my $ContextClass;
   sub run {
       my ($class, $env) = @_;
   
